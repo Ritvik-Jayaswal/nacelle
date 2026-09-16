@@ -255,12 +255,13 @@ where
     let handshake_timeout = tls_config.handshake_timeout();
     let mut connections = tokio::task::JoinSet::new();
     let local_addr = listener.local_addr().ok();
-    nacelle_core::runtime::report_runtime_topology("tcp");
+    nacelle_core::runtime::report_runtime_topology(
+        "tcp",
+        server.telemetry().runtime_metrics_enabled(),
+    );
     loop {
         // Reap finished connection tasks without competing with `accept()`.
-        while let Some(joined) = connections.try_join_next() {
-            log_connection_result(Some(joined), NacelleTransport::new("tcp"));
-        }
+        reap_finished_connections(&mut connections, NacelleTransport::new("tcp"));
         tokio::select! {
             biased;
             _ = shutdown.changed() => break,
@@ -598,13 +599,14 @@ where
     let handshake_timeout = tls_config.handshake_timeout();
     let local_addr = listener.local_addr().ok();
     let mut connections = tokio::task::JoinSet::new();
-    nacelle_core::runtime::report_runtime_topology("tcp");
+    nacelle_core::runtime::report_runtime_topology(
+        "tcp",
+        server.telemetry().runtime_metrics_enabled(),
+    );
 
     loop {
         // Reap finished connection tasks without competing with `accept()`.
-        while let Some(joined) = connections.try_join_next() {
-            log_connection_result(Some(joined), transport);
-        }
+        reap_finished_connections(&mut connections, transport);
         tokio::select! {
             biased;
             _ = shutdown.changed() => break,

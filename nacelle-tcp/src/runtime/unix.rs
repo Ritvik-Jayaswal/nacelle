@@ -210,12 +210,13 @@ where
     Observer: NacelleTelemetryObserver,
 {
     let mut connections = tokio::task::JoinSet::new();
-    nacelle_core::runtime::report_runtime_topology("unix_socket");
+    nacelle_core::runtime::report_runtime_topology(
+        "unix_socket",
+        server.telemetry().runtime_metrics_enabled(),
+    );
     loop {
         // Reap finished connection tasks without competing with `accept()`.
-        while let Some(joined) = connections.try_join_next() {
-            log_connection_result(Some(joined), NacelleTransport::new("unix_socket"));
-        }
+        reap_finished_connections(&mut connections, NacelleTransport::new("unix_socket"));
         tokio::select! {
             biased;
             _ = shutdown.changed() => break,
@@ -467,13 +468,14 @@ where
 {
     let transport = NacelleTransport::new("unix_socket");
     let mut connections = tokio::task::JoinSet::new();
-    nacelle_core::runtime::report_runtime_topology("unix_socket");
+    nacelle_core::runtime::report_runtime_topology(
+        "unix_socket",
+        server.telemetry().runtime_metrics_enabled(),
+    );
 
     loop {
         // Reap finished connection tasks without competing with `accept()`.
-        while let Some(joined) = connections.try_join_next() {
-            log_connection_result(Some(joined), transport);
-        }
+        reap_finished_connections(&mut connections, transport);
         tokio::select! {
             biased;
             _ = shutdown.changed() => break,

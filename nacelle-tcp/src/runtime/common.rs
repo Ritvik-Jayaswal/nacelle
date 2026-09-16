@@ -54,6 +54,29 @@ pub(super) fn log_connection_result(
     }
 }
 
+/// Maximum completions reaped before an accept loop polls `accept()` again.
+///
+/// Reaping a batch amortises the per-poll cost, but an unbounded drain would
+/// let one large burst of completions delay admission. This bounds that
+/// latency while keeping the batching benefit.
+pub(super) const CONNECTION_REAP_BATCH: usize = 32;
+
+/// Reap up to [`CONNECTION_REAP_BATCH`] finished connection tasks.
+///
+/// Non-blocking: returns as soon as no completion is ready, so an idle loop
+/// falls through to `accept()` immediately.
+pub(super) fn reap_finished_connections(
+    connections: &mut tokio::task::JoinSet<Result<(), NacelleError>>,
+    transport: NacelleTransport,
+) {
+    for _ in 0..CONNECTION_REAP_BATCH {
+        let Some(joined) = connections.try_join_next() else {
+            return;
+        };
+        log_connection_result(Some(joined), transport);
+    }
+}
+
 pub(super) fn connection_rejection_reason(error: &NacelleError) -> &'static str {
     match error {
         NacelleError::ResourceLimit(reason) => reason.as_str(),
@@ -150,12 +173,13 @@ where
     let transport = NacelleTransport::new("tcp");
     let mut connections = tokio::task::JoinSet::new();
     let local_addr = listener.local_addr().ok();
-    nacelle_core::runtime::report_runtime_topology("tcp");
+    nacelle_core::runtime::report_runtime_topology(
+        "tcp",
+        server.telemetry().runtime_metrics_enabled(),
+    );
     loop {
         // Reap finished connection tasks without competing with `accept()`.
-        while let Some(joined) = connections.try_join_next() {
-            log_connection_result(Some(joined), transport);
-        }
+        reap_finished_connections(&mut connections, transport);
         tokio::select! {
             biased;
             _ = shutdown.changed() => break,

@@ -18,7 +18,7 @@ use nacelle_core::telemetry::{
 
 use super::common::{
     bind_tcp_listener, connection_rejection_reason, drain_connection_tasks, log_connection_result,
-    run_accept_loop,
+    reap_finished_connections, run_accept_loop,
 };
 
 /// Listen on `addr` and serve each accepted TCP connection in its own task.
@@ -354,13 +354,14 @@ where
     let transport = NacelleTransport::new("tcp");
     let local_addr = listener.local_addr().ok();
     let mut connections = tokio::task::JoinSet::new();
-    nacelle_core::runtime::report_runtime_topology("tcp");
+    nacelle_core::runtime::report_runtime_topology(
+        "tcp",
+        server.telemetry().runtime_metrics_enabled(),
+    );
 
     loop {
         // Reap finished connection tasks without competing with `accept()`.
-        while let Some(joined) = connections.try_join_next() {
-            log_connection_result(Some(joined), transport);
-        }
+        reap_finished_connections(&mut connections, transport);
         tokio::select! {
             biased;
             _ = shutdown.changed() => break,

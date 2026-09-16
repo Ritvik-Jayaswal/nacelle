@@ -138,11 +138,43 @@ pub struct NacelleRuntimeState {
 /// accept and every request. Packed adjacently they share a single cache line,
 /// so an accept on one core invalidates the request counter on every other
 /// core (false sharing) even though the two counters are unrelated.
+///
+/// The alignment matches the coherence granularity of the target rather than a
+/// universal 64 bytes: x86-64's L2 spatial prefetcher pulls lines in aligned
+/// pairs, and arm64 (notably Apple silicon) and powerpc64 use 128-byte lines,
+/// so 64 bytes would still leave neighbouring counters sharing a unit there.
+/// These are the same thresholds `crossbeam-utils` uses for `CachePadded`.
+#[cfg_attr(
+    any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+        target_arch = "powerpc64"
+    ),
+    repr(align(128))
+)]
+#[cfg_attr(
+    any(target_arch = "arm", target_arch = "mips", target_arch = "riscv64"),
+    repr(align(32))
+)]
+#[cfg_attr(
+    not(any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+        target_arch = "powerpc64",
+        target_arch = "arm",
+        target_arch = "mips",
+        target_arch = "riscv64",
+    )),
+    repr(align(64))
+)]
 #[derive(Debug)]
-#[repr(align(64))]
 struct PaddedCounter(AtomicUsize);
 
 impl PaddedCounter {
+    /// The coherence unit this counter is padded to, in bytes.
+    #[cfg(test)]
+    const ALIGN: usize = align_of::<Self>();
+
     const fn new() -> Self {
         Self(AtomicUsize::new(0))
     }
@@ -1126,8 +1158,10 @@ mod tests {
         let connections = std::ptr::from_ref(&state.inner.active_connections).addr();
         let requests = std::ptr::from_ref(&state.inner.active_requests).addr();
         let streaming = std::ptr::from_ref(&state.inner.active_streaming_tasks).addr();
-        assert!(connections.abs_diff(requests) >= 64);
-        assert!(requests.abs_diff(streaming) >= 64);
+        let unit = PaddedCounter::ALIGN;
+        assert!(unit >= 32, "coherence unit should be a plausible line size");
+        assert!(connections.abs_diff(requests) >= unit);
+        assert!(requests.abs_diff(streaming) >= unit);
     }
 
     #[test]
