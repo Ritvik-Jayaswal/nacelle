@@ -150,14 +150,15 @@ where
     let transport = NacelleTransport::new("tcp");
     let mut connections = tokio::task::JoinSet::new();
     let local_addr = listener.local_addr().ok();
+    nacelle_core::runtime::report_runtime_topology("tcp");
     loop {
+        // Reap finished connection tasks without competing with `accept()`.
+        while let Some(joined) = connections.try_join_next() {
+            log_connection_result(Some(joined), transport);
+        }
         tokio::select! {
             biased;
             _ = shutdown.changed() => break,
-            joined = connections.join_next(), if !connections.is_empty() => {
-                log_connection_result(joined, transport);
-                continue;
-            }
             accepted = listener.accept() => {
                 let (stream, peer_addr) = accepted?;
                 prepare_stream(&stream)?;
@@ -174,6 +175,9 @@ where
                 };
                 let task = serve_connection(server.clone(), stream, connection, connection_permit);
                 connections.spawn(task);
+            }
+            joined = connections.join_next(), if !connections.is_empty() => {
+                log_connection_result(joined, transport);
             }
         }
     }

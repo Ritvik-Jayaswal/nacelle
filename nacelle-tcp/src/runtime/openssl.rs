@@ -563,15 +563,16 @@ where
     let handshake_timeout = tls_config.handshake_timeout();
     let local_addr = listener.local_addr().ok();
     let mut connections = tokio::task::JoinSet::new();
+    nacelle_core::runtime::report_runtime_topology("tcp");
 
     loop {
+        // Reap finished connection tasks without competing with `accept()`.
+        while let Some(joined) = connections.try_join_next() {
+            log_connection_result(Some(joined), transport);
+        }
         tokio::select! {
             biased;
             _ = shutdown.changed() => break,
-            joined = connections.join_next(), if !connections.is_empty() => {
-                log_connection_result(joined, transport);
-                continue;
-            }
             accepted = listener.accept() => {
                 let (stream, peer_addr) = accepted?;
                 tcp_options.apply_to_stream(&stream)?;
@@ -623,6 +624,9 @@ where
                         .serve_io_without_connection_limit(stream, connection)
                         .await
                 });
+            }
+            joined = connections.join_next(), if !connections.is_empty() => {
+                log_connection_result(joined, transport);
             }
         }
     }

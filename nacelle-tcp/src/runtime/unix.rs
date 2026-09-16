@@ -210,14 +210,15 @@ where
     Observer: NacelleTelemetryObserver,
 {
     let mut connections = tokio::task::JoinSet::new();
+    nacelle_core::runtime::report_runtime_topology("unix_socket");
     loop {
+        // Reap finished connection tasks without competing with `accept()`.
+        while let Some(joined) = connections.try_join_next() {
+            log_connection_result(Some(joined), NacelleTransport::new("unix_socket"));
+        }
         tokio::select! {
             biased;
             _ = shutdown.changed() => break,
-            joined = connections.join_next(), if !connections.is_empty() => {
-                log_connection_result(joined, NacelleTransport::new("unix_socket"));
-                continue;
-            }
             accepted = listener.accept() => {
                 let (stream, _) = accepted?;
                 let connection = NacelleConnectionMeta::unix_socket(local_path.clone());
@@ -241,6 +242,9 @@ where
                     let _connection_permit = connection_permit;
                     server.serve_io_without_connection_limit(stream, connection).await
                 });
+            }
+            joined = connections.join_next(), if !connections.is_empty() => {
+                log_connection_result(joined, NacelleTransport::new("unix_socket"));
             }
         }
     }
@@ -463,15 +467,16 @@ where
 {
     let transport = NacelleTransport::new("unix_socket");
     let mut connections = tokio::task::JoinSet::new();
+    nacelle_core::runtime::report_runtime_topology("unix_socket");
 
     loop {
+        // Reap finished connection tasks without competing with `accept()`.
+        while let Some(joined) = connections.try_join_next() {
+            log_connection_result(Some(joined), transport);
+        }
         tokio::select! {
             biased;
             _ = shutdown.changed() => break,
-            joined = connections.join_next(), if !connections.is_empty() => {
-                log_connection_result(joined, transport);
-                continue;
-            }
             accepted = listener.accept() => {
                 let (stream, _) = accepted?;
                 let connection = NacelleConnectionMeta::unix_socket(local_path.clone())
@@ -500,6 +505,9 @@ where
                         .serve_io_without_connection_limit(stream, connection)
                         .await
                 });
+            }
+            joined = connections.join_next(), if !connections.is_empty() => {
+                log_connection_result(joined, transport);
             }
         }
     }

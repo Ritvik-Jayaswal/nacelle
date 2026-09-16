@@ -52,6 +52,7 @@ Expected shutdown telemetry:
 
 ## Metrics To Watch
 
+- `server.runtime.workers`
 - `server.connection.active`
 - `server.request.active`
 - `server.streaming_task.active`
@@ -70,6 +71,22 @@ Expected shutdown telemetry:
 
 Alerts should focus on sustained saturation, rising rejections, timeout spikes,
 and memory approaching the configured budget.
+
+## Runtime Topology
+
+Nacelle parallelizes connection handling by spawning onto the ambient Tokio
+runtime, so a listener started on a current-thread runtime is confined to a
+single core regardless of how many cores the host has. The first HTTP listener
+to start reports the runtime it observed:
+
+```text
+INFO nacelle: listener started transport="http" runtime="multi_thread" workers=12
+```
+
+A single-worker runtime additionally emits a warning, and the worker count is
+published as the `server.runtime.workers` gauge. Alert on
+`server.runtime.workers == 1` in multi-core deployments; it is the clearest
+signal that the process is leaving throughput on the table.
 
 ## Benchmarking
 
@@ -136,6 +153,7 @@ rather than embedded in the metric name:
 
 | Metric | Type | Notes |
 | --- | --- | --- |
+| `server.runtime.workers` | Gauge | Worker threads of the Tokio runtime serving listeners. A value of `1` means throughput is capped to one core. |
 | `server.connection.active` | Gauge | Current active connections. Listener-labeled series provide transport-level detail; unlabeled series represent runtime permit usage. |
 | `server.request.active` | Gauge | Current active requests. Protocol-labeled series provide request-level detail; unlabeled series represent runtime permit usage. |
 | `server.streaming_task.active` | Gauge | Current runtime streaming body tasks. |

@@ -391,14 +391,15 @@ where
         let server = Rc::new(self);
         let local_addr = listener.local_addr().ok();
         let mut connections = tokio::task::JoinSet::new();
+        nacelle_core::runtime::report_runtime_topology("http");
         loop {
+            // Reap finished connection tasks without competing with `accept()`.
+            while let Some(joined) = connections.try_join_next() {
+                log_http_connection_result(Some(joined));
+            }
             tokio::select! {
                 biased;
                 _ = shutdown.changed() => break,
-                joined = connections.join_next(), if !connections.is_empty() => {
-                    log_http_connection_result(joined);
-                    continue;
-                }
                 accepted = listener.accept() => {
                     let (stream, peer_addr) = accepted?;
                     let connection_permit = match server
@@ -422,6 +423,9 @@ where
                     connections.spawn_local(async move {
                         run_local_http_connection(server, stream, connection, connection_permit).await
                     });
+                }
+                joined = connections.join_next(), if !connections.is_empty() => {
+                    log_http_connection_result(joined);
                 }
             }
         }
@@ -451,14 +455,15 @@ where
         let local_addr = listener.local_addr().ok();
         let handshake_timeout = tls_config.handshake_timeout();
         let mut connections = tokio::task::JoinSet::new();
+        nacelle_core::runtime::report_runtime_topology("http");
         loop {
+            // Reap finished connection tasks without competing with `accept()`.
+            while let Some(joined) = connections.try_join_next() {
+                log_http_connection_result(Some(joined));
+            }
             tokio::select! {
                 biased;
                 _ = shutdown.changed() => break,
-                joined = connections.join_next(), if !connections.is_empty() => {
-                    log_http_connection_result(joined);
-                    continue;
-                }
                 accepted = listener.accept() => {
                     let (stream, peer_addr) = accepted?;
                     let connection_permit = match server
@@ -504,6 +509,9 @@ where
                         run_local_http_connection(server, stream, connection, connection_permit)
                             .await
                     });
+                }
+                joined = connections.join_next(), if !connections.is_empty() => {
+                    log_http_connection_result(joined);
                 }
             }
         }
@@ -745,14 +753,15 @@ where
         let server = Arc::new(self);
         let mut connections = tokio::task::JoinSet::new();
         let local_addr = listener.local_addr().ok();
+        nacelle_core::runtime::report_runtime_topology("http");
         loop {
+            // Reap finished connection tasks without competing with `accept()`.
+            while let Some(joined) = connections.try_join_next() {
+                log_http_connection_result(Some(joined));
+            }
             tokio::select! {
                 biased;
                 _ = shutdown.changed() => break,
-                joined = connections.join_next(), if !connections.is_empty() => {
-                    log_http_connection_result(joined);
-                    continue;
-                }
                 accepted = listener.accept() => {
                     let (stream, peer_addr) = accepted?;
                     let server = server.clone();
@@ -780,6 +789,9 @@ where
                         connection,
                         connection_permit,
                     ));
+                }
+                joined = connections.join_next(), if !connections.is_empty() => {
+                    log_http_connection_result(joined);
                 }
             }
         }
@@ -880,14 +892,15 @@ where
         let handshake_timeout = tls_config.handshake_timeout();
         let mut connections = tokio::task::JoinSet::new();
         let local_addr = listener.local_addr().ok();
+        nacelle_core::runtime::report_runtime_topology("http");
         loop {
+            // Reap finished connection tasks without competing with `accept()`.
+            while let Some(joined) = connections.try_join_next() {
+                log_http_connection_result(Some(joined));
+            }
             tokio::select! {
                 biased;
                 _ = shutdown.changed() => break,
-                joined = connections.join_next(), if !connections.is_empty() => {
-                    log_http_connection_result(joined);
-                    continue;
-                }
                 accepted = listener.accept() => {
                     let (stream, peer_addr) = accepted?;
                     let server = server.clone();
@@ -937,6 +950,9 @@ where
                         )
                         .await
                     });
+                }
+                joined = connections.join_next(), if !connections.is_empty() => {
+                    log_http_connection_result(joined);
                 }
             }
         }
